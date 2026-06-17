@@ -1,0 +1,10 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+numpy>=1.24
+soundfile>=0.12
+librosa>=0.10
+# Optional: best-in-class key detection (+confidence). The service runs without
+# it — key then falls back to the browser's chroma heuristic. Skip this line if
+# the wheel won't build on your platform (common on Apple Silicon).
+essentia>=2.1b6.dev1110

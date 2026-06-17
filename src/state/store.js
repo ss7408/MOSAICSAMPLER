@@ -5,9 +5,47 @@
 import { create } from "zustand";
 import * as Tone from "tone";
 import { engine } from "../audio/engine.js";
-import { analyzeBuffer } from "../audio/analyzer.js";
+import { analyzeBuffer, buildTags } from "../audio/analyzer.js";
+import { analyzeRemote } from "../audio/remoteAnalyze.js";
 import { buildDemoPack, DEMO_HOME } from "../audio/demoPack.js";
-import { suggestPitchShift, transposeKey } from "../audio/musicTheory.js";
+import { suggestPitchShift, transposeKey, noteName } from "../audio/musicTheory.js";
+
+// Below this key strength (0..1) we don't trust a server-detected key: it won't
+// vote for the project key and key-lock won't auto-transpose it. Kills the worst
+// failure mode — confidently transposing an atonal drum/FX loop. The JS heuristic
+// reports no confidence, so its keys are always trusted (keeps the no-backend
+// behaviour identical).
+const KEY_CONF_MIN = 0.4;
+const keyTrusted = (s) => s.keyConfidence == null || s.keyConfidence >= KEY_CONF_MIN;
+
+// Produce a sample's metadata. The browser always does the instant, cheap work
+// (trim, waveform, loudness) plus a heuristic bpm/key/type. For real uploads we
+// then ask the Python service for tempo + key (+confidence); when it answers it
+// wins over the heuristic and we re-tag. Demo-pack items carry an authored `hint`
+// and no `file`, so they never touch the network and stay fully offline.
+async function analyzeItem({ file, filename, audioBuffer, hint }) {
+  const meta = analyzeBuffer(audioBuffer, filename, hint);
+  if (!file) return meta;
+  const remote = await analyzeRemote(file);
+  if (!remote) return meta; // offline / no server / timeout -> keep the heuristic
+  if ("bpm" in remote) meta.bpm = remote.bpm;
+  if ("key" in remote) {
+    meta.key = remote.key;
+    meta.rootPitch = remote.key ? noteName(remote.key.tonic) : null;
+    meta.keyConfidence = remote.keyConfidence ?? null;
+  }
+  if (remote.detectedType) meta.detectedType = remote.detectedType;
+  meta.analyzedBy = "python";
+  // bpm / key / type drive the tags, so rebuild them on the server's answer.
+  meta.tags = buildTags({
+    detectedType: meta.detectedType,
+    bpm: meta.bpm,
+    key: meta.key,
+    energy: meta.energy,
+    transientDensity: meta.transientDensity,
+  });
+  return meta;
+}
 
 function isLoop(meta) {
   if (meta.detectedType === "fx") return false;
@@ -27,6 +65,7 @@ function enrich(meta) {
     delay: 0,
     mute: false,
     solo: false,
+    keyConfidence: meta.keyConfidence ?? null, // server key strength; null = JS heuristic (trusted)
     keyShift: 0, // auto harmonic lock toward the project key (semitones)
     tune: 0, // manual per-sample correction (semitones)
   };
@@ -37,7 +76,7 @@ function enrich(meta) {
 function pickProjectKey(samples) {
   const counts = new Map();
   for (const s of samples) {
-    if (!s.key) continue;
+    if (!s.key || !keyTrusted(s)) continue; // ignore low-confidence keys in the vote
     const k = `${s.key.tonic}-${s.key.mode}`;
     counts.set(k, (counts.get(k) || 0) + 1);
   }
@@ -99,7 +138,7 @@ export const useStore = create((set, get) => ({
     const items = [];
     for (const file of files) {
       try {
-        items.push({ filename: file.name, audioBuffer: await decodeFile(file), hint: {} });
+        items.push({ file, filename: file.name, audioBuffer: await decodeFile(file), hint: {} });
       } catch (e) {
         /* skip undecodable */
       }
@@ -116,7 +155,7 @@ export const useStore = create((set, get) => ({
     for (const file of files) {
       try {
         const audioBuffer = await decodeFile(file);
-        const meta = analyzeBuffer(audioBuffer, file.name, {});
+        const meta = await analyzeItem({ file, filename: file.name, audioBuffer, hint: {} });
         const sample = enrich(meta);
         engine.addVoice(meta, audioBuffer, { loop: sample.loop });
         set((s) => {
@@ -138,8 +177,7 @@ export const useStore = create((set, get) => ({
     set((s) => ({ analyzing: { ...s.analyzing, total: items.length, done: 0 } }));
     const out = [];
     for (let i = 0; i < items.length; i++) {
-      const { filename, audioBuffer, hint } = items[i];
-      const meta = analyzeBuffer(audioBuffer, filename, hint);
+      const meta = await analyzeItem(items[i]);
       const sample = enrich(meta);
       engine.addVoice(meta, audioBuffer, { loop: sample.loop });
       out.push(sample);
@@ -165,7 +203,7 @@ export const useStore = create((set, get) => ({
   _relock: () => {
     const { samples, projectKey, keyLock } = get();
     const next = samples.map((s) => {
-      const shift = keyLock && s.key && projectKey ? suggestPitchShift(s.key, projectKey) : 0;
+      const shift = keyLock && s.key && projectKey && keyTrusted(s) ? suggestPitchShift(s.key, projectKey) : 0;
       engine.setKeyShift(s.id, shift);
       return s.keyShift === shift ? s : { ...s, keyShift: shift };
     });

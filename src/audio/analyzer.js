@@ -288,7 +288,7 @@ function computeEnergy({ rms, transientDensity, centroid, detectedType }) {
   return clamp(e, 0.05, 1);
 }
 
-function buildTags({ detectedType, bpm, key, energy, transientDensity }) {
+export function buildTags({ detectedType, bpm, key, energy, transientDensity }) {
   const tags = [detectedType];
   if (bpm) tags.push(`${bpm} BPM`);
   if (energy > 0.66) tags.push("high energy");

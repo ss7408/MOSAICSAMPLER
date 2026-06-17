@@ -1,0 +1,10 @@
+# Railway config. Set the service's Root Directory to "server" in the dashboard
+# so this file, the Dockerfile, and app.py resolve correctly.
+
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
