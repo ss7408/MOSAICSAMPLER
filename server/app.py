@@ -140,8 +140,11 @@ def health():
 
 
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
-    raw = await file.read()
+def analyze(file: UploadFile = File(...)):
+    # Sync `def` on purpose: FastAPI runs sync path operations in a threadpool, so
+    # several uploads analyze in parallel. librosa/essentia are CPU-bound and would
+    # block the event loop if this were `async def`, serializing every request.
+    raw = file.file.read()
     y, sr = _load_mono(raw)
     key, confidence = detect_key(y, sr)
     return {

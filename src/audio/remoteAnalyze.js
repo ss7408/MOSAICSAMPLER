@@ -10,7 +10,7 @@ const ENDPOINT = import.meta.env.VITE_ANALYZE_URL ?? "http://localhost:8000/anal
 // Set VITE_ANALYZE_URL=off to run fully offline (JS heuristics only).
 export const remoteEnabled = !!ENDPOINT && ENDPOINT !== "off";
 
-export async function analyzeRemote(file, { timeoutMs = 8000 } = {}) {
+export async function analyzeRemote(file, { timeoutMs = 20000 } = {}) {
   if (!remoteEnabled || !file) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

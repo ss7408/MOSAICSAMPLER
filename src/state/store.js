@@ -18,33 +18,26 @@ import { suggestPitchShift, transposeKey, noteName } from "../audio/musicTheory.
 const KEY_CONF_MIN = 0.4;
 const keyTrusted = (s) => s.keyConfidence == null || s.keyConfidence >= KEY_CONF_MIN;
 
-// Produce a sample's metadata. The browser always does the instant, cheap work
-// (trim, waveform, loudness) plus a heuristic bpm/key/type. For real uploads we
-// then ask the Python service for tempo + key (+confidence); when it answers it
-// wins over the heuristic and we re-tag. Demo-pack items carry an authored `hint`
-// and no `file`, so they never touch the network and stay fully offline.
-async function analyzeItem({ file, filename, audioBuffer, hint }) {
-  const meta = analyzeBuffer(audioBuffer, filename, hint);
-  if (!file) return meta;
-  const remote = await analyzeRemote(file);
-  if (!remote) return meta; // offline / no server / timeout -> keep the heuristic
-  if ("bpm" in remote) meta.bpm = remote.bpm;
+// Merge a server (Python) analysis result onto an existing sample. Tempo / key /
+// type win over the in-browser heuristic; loop-status and tags are re-derived.
+function applyRemote(smp, remote) {
+  const next = { ...smp, analyzedBy: "python" };
+  if ("bpm" in remote) next.bpm = remote.bpm;
   if ("key" in remote) {
-    meta.key = remote.key;
-    meta.rootPitch = remote.key ? noteName(remote.key.tonic) : null;
-    meta.keyConfidence = remote.keyConfidence ?? null;
+    next.key = remote.key;
+    next.rootPitch = remote.key ? noteName(remote.key.tonic) : null;
+    next.keyConfidence = remote.keyConfidence ?? null;
   }
-  if (remote.detectedType) meta.detectedType = remote.detectedType;
-  meta.analyzedBy = "python";
-  // bpm / key / type drive the tags, so rebuild them on the server's answer.
-  meta.tags = buildTags({
-    detectedType: meta.detectedType,
-    bpm: meta.bpm,
-    key: meta.key,
-    energy: meta.energy,
-    transientDensity: meta.transientDensity,
+  if (remote.detectedType) next.detectedType = remote.detectedType;
+  next.loop = isLoop(next);
+  next.tags = buildTags({
+    detectedType: next.detectedType,
+    bpm: next.bpm,
+    key: next.key,
+    energy: next.energy,
+    transientDensity: next.transientDensity,
   });
-  return meta;
+  return next;
 }
 
 function isLoop(meta) {
@@ -117,9 +110,11 @@ export const useStore = create((set, get) => ({
   masterPitch: 0,
   align: true,
   projectKey: null, // the global key samples lock to
+  projectKeyAuto: true, // key was auto-derived (vs. user-set); lets the server refine it
   keyLock: true, // auto harmonic key-matching on/off
   master: { saturate: 0, compress: 0, makeup: 0 }, // master-bus effects
   analyzing: { active: false, total: 0, done: 0, current: "" },
+  enriching: 0, // samples still awaiting server (Python) refinement
 
   // --- ingestion ------------------------------------------------------
   loadDemo: async () => {
@@ -152,12 +147,14 @@ export const useStore = create((set, get) => ({
     if (get().view !== "ready") return get().loadFiles(fileList);
     const files = Array.from(fileList).filter((f) => AUDIO_RE.test(f.name)).slice(0, 16);
     if (!files.length) return;
+    const pending = [];
     for (const file of files) {
       try {
         const audioBuffer = await decodeFile(file);
-        const meta = await analyzeItem({ file, filename: file.name, audioBuffer, hint: {} });
+        const meta = analyzeBuffer(audioBuffer, file.name, {});
         const sample = enrich(meta);
         engine.addVoice(meta, audioBuffer, { loop: sample.loop });
+        pending.push({ file, id: sample.id });
         set((s) => {
           const samples = [...s.samples, sample];
           const deck = [...s.deck];
@@ -171,29 +168,63 @@ export const useStore = create((set, get) => ({
     }
     if (!get().projectKey) set({ projectKey: pickProjectKey(get().samples) });
     get()._relock();
+    get()._enrichRemote(pending);
   },
 
   _ingest: async (items) => {
     set((s) => ({ analyzing: { ...s.analyzing, total: items.length, done: 0 } }));
     const out = [];
+    const pending = []; // real uploads to refine from the server, in the background
+    // Pass 1 — instant, no network: cheap JS analysis + build the voice so the
+    // deck is playable right away. The smart fields refine afterwards.
     for (let i = 0; i < items.length; i++) {
-      const meta = await analyzeItem(items[i]);
+      const { file, filename, audioBuffer, hint } = items[i];
+      const meta = analyzeBuffer(audioBuffer, filename, hint);
       const sample = enrich(meta);
       engine.addVoice(meta, audioBuffer, { loop: sample.loop });
       out.push(sample);
+      if (file) pending.push({ file, id: sample.id });
       set((s) => ({ analyzing: { ...s.analyzing, done: i + 1, current: sample.name }, samples: [...out] }));
-      await wait(110);
+      await wait(40);
     }
-    await wait(360);
     const projectKey = get().projectKey || pickProjectKey(out);
     set({ view: "ready", deck: buildDeck(out), selectedId: out[0]?.id ?? null, projectKey, analyzing: { active: false, total: 0, done: 0, current: "" } });
+    get()._relock();
+    // Pass 2 — background: ask the Python service for tempo/key/type and snap the
+    // results in as they arrive. Not awaited, so the UI is never blocked on it.
+    get()._enrichRemote(pending);
+  },
+
+  // Background refinement: ask the Python service for better tempo/key/type and
+  // patch each sample in place as answers land. Concurrent, best-effort (a miss
+  // keeps the JS heuristic), and never awaited by ingestion.
+  _enrichRemote: async (pending) => {
+    if (!pending || !pending.length) return;
+    set({ enriching: pending.length });
+    await Promise.all(
+      pending.map(async ({ file, id }) => {
+        const remote = await analyzeRemote(file);
+        if (remote) {
+          set((s) => ({
+            samples: s.samples.map((smp) => (smp.id === id ? applyRemote(smp, remote) : smp)),
+          }));
+          // Re-stamp the voice so a corrected tempo / loop-status takes effect.
+          const smp = get().samples.find((s) => s.id === id);
+          if (smp) engine.updateVoiceTiming(id, { baseBpm: smp.bpm || null, loop: smp.loop });
+        }
+        set((s) => ({ enriching: Math.max(0, s.enriching - 1) }));
+      })
+    );
+    // Server keys are more accurate, so re-pick the project key (unless the user
+    // set one by hand) and re-lock everything to it.
+    if (get().projectKeyAuto) set({ projectKey: pickProjectKey(get().samples) });
     get()._relock();
   },
 
   reset: () => {
     engine.stopAll();
     get().samples.forEach((s) => engine.removeVoice(s.id));
-    set({ view: "empty", samples: [], deck: [], selectedId: null, playing: {}, projectKey: null });
+    set({ view: "empty", samples: [], deck: [], selectedId: null, playing: {}, projectKey: null, projectKeyAuto: true, enriching: 0 });
   },
 
   // --- key lock: harmonically match every sample to the project key ---
@@ -211,20 +242,20 @@ export const useStore = create((set, get) => ({
   },
 
   setProjectKey: (key) => {
-    set({ projectKey: key });
+    set({ projectKey: key, projectKeyAuto: false });
     get()._relock();
   },
   // move the whole project key up/down a semitone (re-locks every sample)
   nudgeProjectKey: (semis) => {
     const pk = get().projectKey;
     if (!pk) return;
-    set({ projectKey: transposeKey(pk, semis) });
+    set({ projectKey: transposeKey(pk, semis), projectKeyAuto: false });
     get()._relock();
   },
   toggleKeyMode: () => {
     const pk = get().projectKey;
     if (!pk) return;
-    set({ projectKey: { tonic: pk.tonic, mode: pk.mode === "min" ? "maj" : "min" } });
+    set({ projectKey: { tonic: pk.tonic, mode: pk.mode === "min" ? "maj" : "min" }, projectKeyAuto: false });
     get()._relock();
   },
   toggleKeyLock: () => {

@@ -126,6 +126,16 @@ class SamplerEngine {
     v.grain.playbackRate = v.loop && v.baseBpm ? this.bpm / v.baseBpm : 1;
   }
 
+  // Re-stamp a voice's tempo / loop flag after async (server) analysis lands, so
+  // a loop the heuristic mis-tempo'd or mis-typed corrects itself in place.
+  updateVoiceTiming(id, { baseBpm, loop } = {}) {
+    const v = this.voices.get(id);
+    if (!v) return;
+    if (baseBpm !== undefined) v.baseBpm = baseBpm;
+    if (loop !== undefined) v.loop = loop;
+    this._applyRate(v);
+  }
+
   _offset(v) {
     return this.align ? v.trim : 0;
   }
