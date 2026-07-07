@@ -1,9 +1,9 @@
 {
-  "name": "mosaic-sample-instrument",
+  "name": "mosaic-sampler",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Mosaic — a browser-based creative sample instrument. Drop a folder. Build a hook.",
+  "description": "Mosaic Sampler — a browser-based creative sample instrument. Drop a folder. Build a hook.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

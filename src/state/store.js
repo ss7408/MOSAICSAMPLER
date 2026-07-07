@@ -475,7 +475,7 @@ export const useStore = create((set, get) => ({
       const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 13); // YYYYMMDDTHHMM
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `mosaic-${stamp}.${ext}`;
+      a.download = `mosaic-sampler-${stamp}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

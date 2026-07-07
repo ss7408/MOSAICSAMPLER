@@ -1,5 +1,5 @@
 """
-Mosaic analyze service.
+Mosaic Sampler analyze service.
 
 A single endpoint that does the *smart* listening — tempo (librosa) and key
 (essentia, with a confidence) — and returns it in the exact metadata shape the
@@ -31,7 +31,7 @@ import tempfile
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Mosaic analyze")
+app = FastAPI(title="Mosaic Sampler analyze")
 
 # Allowed browser origins. Defaults to "*" for local dev (the Vite server runs on
 # :5173); in production set ALLOWED_ORIGINS to your frontend URL, comma-separated

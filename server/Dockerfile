@@ -1,4 +1,4 @@
-# Mosaic analyze service — container image for Railway (also works on Render,
+# Mosaic Sampler analyze service — container image for Railway (also works on Render,
 # Fly, Cloud Run). Railway auto-detects this Dockerfile and builds it. The
 # container must listen on $PORT, which the platform injects; the CMD binds to it.
 

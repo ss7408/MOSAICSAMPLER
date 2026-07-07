@@ -150,7 +150,7 @@ function Empty() {
           </div>
           <div className="drop-privacy">
             <div>▸ ANY FILES YOU DROP STAY IN YOUR BROWSER. NO UPLOAD. NO ACCOUNT.</div>
-            <div>▸ MOSAIC ANALYZES BPM · KEY · TYPE · TRIM ON-DEVICE.</div>
+            <div>▸ MOSAIC SAMPLER ANALYZES BPM · KEY · TYPE · TRIM ON-DEVICE.</div>
           </div>
         </div>
         <input

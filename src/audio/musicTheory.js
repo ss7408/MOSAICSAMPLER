@@ -1,5 +1,5 @@
 // musicTheory.js
-// Harmonic intelligence for Mosaic.
+// Harmonic intelligence for Mosaic Sampler.
 // Pure functions only: no audio, no UI state, no side effects.
 
 export const NOTE_NAMES = [

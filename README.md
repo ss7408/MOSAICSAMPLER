@@ -1,8 +1,8 @@
-# Mosaic
+# Mosaic Sampler
 
 **Drop a folder. Build a vibe.**
 
-Mosaic is a tiny browser-based sampler drawn as a **CRT terminal** — monochrome
+Mosaic Sampler is a tiny browser-based instrument drawn as a **CRT terminal** — monochrome
 phosphor, bitmap type, ASCII waveforms and faders, box-drawing frames,
 inverse-video selection, scanlines. Point it at a folder of sounds; it listens to
 each file, auto-trims the silence off the front so everything starts at 0, and
@@ -14,23 +14,23 @@ Phosphor is themeable from the status bar: **GRN** (green), **AMB** (amber),
 
 ## Screenshots
 
-Drop a folder (or hit **TRY DEMO**) and Mosaic analyzes BPM · key · type · trim
+Drop a folder (or hit **TRY DEMO**) and Mosaic Sampler analyzes BPM · key · type · trim
 on-device — no upload, no account:
 
-![Mosaic — upload screen](docs/upload-screen.png)
+![Mosaic Sampler — upload screen](docs/upload-screen.png)
 
 Then play: a library bin, a 3D wireframe of the selected sample, ASCII faders,
 the 8-slot key deck and master FX. Press **Q W E R / A S D F** to punch the deck,
 and click a sample's `[letter]` to correct its type:
 
-![Mosaic — the device](docs/device.png)
+![Mosaic Sampler — the device](docs/device.png)
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
 ```
 
-No audio assets needed — add the `-- Upload Me` folder and Mosaic is ready to 
+No audio assets needed — add the `-- Upload Me` folder and Mosaic Sampler is ready to 
 experiment with, 
 
 ## The device

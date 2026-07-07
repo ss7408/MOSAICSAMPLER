@@ -1,4 +1,4 @@
-# Mosaic analyze service
+# Mosaic Sampler analyze service
 
 Optional Python sidecar that does the *smart* listening — **tempo** (librosa) and
 **key + confidence** (essentia) — and hands it back in the exact metadata shape
